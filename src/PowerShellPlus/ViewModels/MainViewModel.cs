@@ -10,17 +10,10 @@ namespace PowerShellPlus.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly OpenAIService _aiService;
-    private readonly TerminalService _terminal;
     private CancellationTokenSource? _cts;
 
     [ObservableProperty]
     private string _userInput = string.Empty;
-
-    [ObservableProperty]
-    private string _terminalOutput = string.Empty;
-
-    [ObservableProperty]
-    private string _currentDirectory = string.Empty;
 
     [ObservableProperty]
     private string _generatedCommand = string.Empty;
@@ -43,60 +36,20 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<ChatMessage> ChatHistory { get; } = new();
     public ObservableCollection<CommandTemplate> QuickCommands { get; } = new();
 
+    /// <summary>
+    /// 在终端中执行命令的回调
+    /// </summary>
+    public Action<string>? ExecuteInTerminal { get; set; }
+
     public MainViewModel()
     {
         Settings = AppSettings.Load();
         _aiService = new OpenAIService();
-        _terminal = new TerminalService();
 
-        _currentDirectory = _terminal.CurrentDirectory;
         _isApiConfigured = _aiService.IsConfigured;
-
-        // 订阅终端事件
-        _terminal.OutputReceived += (s, output) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                TerminalOutput += output + Environment.NewLine;
-            });
-        };
-
-        _terminal.ErrorReceived += (s, error) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                TerminalOutput += error + Environment.NewLine;
-            });
-        };
-
-        _terminal.DirectoryChanged += (s, path) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                CurrentDirectory = path;
-            });
-        };
-
-        _terminal.ProcessExited += (s, e) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                TerminalOutput += Environment.NewLine + "[终端已退出，正在重启...]" + Environment.NewLine;
-                _terminal.Start();
-            });
-        };
 
         // 初始化快捷命令
         InitializeQuickCommands();
-
-        // 启动终端
-        StartTerminal();
-    }
-
-    private void StartTerminal()
-    {
-        TerminalOutput = "正在启动 PowerShell..." + Environment.NewLine;
-        _terminal.Start();
     }
 
     private void InitializeQuickCommands()
@@ -119,6 +72,8 @@ public partial class MainViewModel : ObservableObject
             new() { Name = "网络状态", Command = "Test-Connection -ComputerName baidu.com -Count 2", Icon = "🌐", IsBuiltIn = true, Description = "测试网络连接" },
             new() { Name = "进程列表", Command = "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, WorkingSet64", Icon = "📊", IsBuiltIn = true, Description = "显示CPU占用最高的10个进程" },
             new() { Name = "清空屏幕", Command = "cls", Icon = "🧹", IsBuiltIn = true, Description = "清空终端屏幕" },
+            new() { Name = "目录", Command = "Get-ChildItem | Format-Table -AutoSize", Icon = "📁", IsBuiltIn = true, Description = "列出当前目录内容" },
+            new() { Name = "conda环境", Command = "conda env list", Icon = "🐍", IsBuiltIn = true, Description = "列出所有 Conda 环境" },
         };
 
         foreach (var cmd in defaultCommands)
@@ -160,7 +115,9 @@ public partial class MainViewModel : ObservableObject
         try
         {
             _cts = new CancellationTokenSource();
-            var command = await _aiService.GenerateCommandAsync(userMessage, CurrentDirectory, _cts.Token);
+            // 使用用户目录作为当前目录
+            var currentDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var command = await _aiService.GenerateCommandAsync(userMessage, currentDir, _cts.Token);
 
             aiChat.Content = "已生成命令:";
             aiChat.GeneratedCommand = command;
@@ -186,7 +143,7 @@ public partial class MainViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(GeneratedCommand))
             return;
 
-        _terminal.SendCommand(GeneratedCommand);
+        ExecuteInTerminal?.Invoke(GeneratedCommand);
     }
 
     [RelayCommand]
@@ -198,15 +155,7 @@ public partial class MainViewModel : ObservableObject
         GeneratedCommand = template.Command;
         HasGeneratedCommand = true;
         
-        // 如果是清屏命令，清空本地输出
-        if (template.Command.Equals("cls", StringComparison.OrdinalIgnoreCase) ||
-            template.Command.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
-            template.Command.Equals("Clear-Host", StringComparison.OrdinalIgnoreCase))
-        {
-            TerminalOutput = string.Empty;
-        }
-        
-        _terminal.SendCommand(template.Command);
+        ExecuteInTerminal?.Invoke(template.Command);
     }
 
     [RelayCommand]
@@ -224,28 +173,7 @@ public partial class MainViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(command))
             return;
 
-        // 如果是清屏命令，清空本地输出
-        if (command.Trim().Equals("cls", StringComparison.OrdinalIgnoreCase) ||
-            command.Trim().Equals("clear", StringComparison.OrdinalIgnoreCase) ||
-            command.Trim().Equals("Clear-Host", StringComparison.OrdinalIgnoreCase))
-        {
-            TerminalOutput = string.Empty;
-        }
-
-        _terminal.SendCommand(command);
-    }
-
-    [RelayCommand]
-    private void ClearTerminal()
-    {
-        TerminalOutput = string.Empty;
-        _terminal.SendCommand("cls");
-    }
-
-    [RelayCommand]
-    private void InterruptCommand()
-    {
-        _terminal.SendCtrlC();
+        ExecuteInTerminal?.Invoke(command);
     }
 
     public void UpdateSettings(AppSettings newSettings)
@@ -298,6 +226,5 @@ public partial class MainViewModel : ObservableObject
     public void Cleanup()
     {
         _cts?.Cancel();
-        _terminal.Dispose();
     }
 }

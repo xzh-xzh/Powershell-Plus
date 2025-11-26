@@ -4,12 +4,15 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:PowerShellPlus.ViewModels"
+        xmlns:controls="clr-namespace:PowerShellPlus.Controls"
         mc:Ignorable="d"
         Title="PowerShell Plus - AI 增强终端" 
         Height="700" Width="1200"
         MinHeight="500" MinWidth="800"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource BackgroundDarkBrush}">
+        Background="{StaticResource BackgroundDarkBrush}"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -40,7 +43,8 @@
                     
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="⚡" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                        <TextBlock Text="PowerShell Terminal" 
+                        <TextBlock x:Name="TerminalTitle"
+                                   Text="PowerShell Terminal" 
                                    Foreground="{StaticResource TextPrimaryBrush}" 
                                    FontSize="15" FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
@@ -50,7 +54,7 @@
                         <Button Content="🧹 清屏" 
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Padding="12,6"
-                                Command="{Binding ClearTerminalCommand}"
+                                Click="ClearTerminal_Click"
                                 ToolTip="清空终端输出"/>
                         <Button Content="⚙️ 设置" 
                                 Style="{StaticResource SecondaryButtonStyle}"
@@ -62,43 +66,42 @@
                 </Grid>
             </Border>
 
-            <!-- 终端输出区域 -->
-            <TextBox Grid.Row="1" 
-                     x:Name="TerminalOutput"
-                     Style="{StaticResource TerminalTextBoxStyle}"
-                     Text="{Binding TerminalOutput, Mode=OneWay}"
-                     TextChanged="TerminalOutput_TextChanged"/>
+            <!-- WebView2 终端区域 -->
+            <controls:WebTerminalControl x:Name="TerminalControl" 
+                                          Grid.Row="1"
+                                          TerminalReady="TerminalControl_TerminalReady"
+                                          TitleChanged="TerminalControl_TitleChanged"
+                                          ProcessExited="TerminalControl_ProcessExited"/>
 
-            <!-- 终端输入区域 -->
-            <Border Grid.Row="2" Background="{StaticResource BackgroundMediumBrush}" Padding="12">
+            <!-- 底部状态栏 -->
+            <Border Grid.Row="2" Background="{StaticResource BackgroundMediumBrush}" Padding="12,8">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="{Binding CurrentDirectory, StringFormat='PS {0}>'}" 
-                               Foreground="{StaticResource AccentBlueBrush}"
-                               FontFamily="Cascadia Code, Consolas"
-                               FontSize="14"
-                               VerticalAlignment="Center"
-                               Margin="0,0,8,0"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="StatusIndicator" 
+                                 Width="8" Height="8" 
+                                 Fill="#10b981" 
+                                 Margin="0,0,8,0"/>
+                        <TextBlock x:Name="StatusText"
+                                   Text="💡 点击终端区域开始输入 | 100% 原生 PowerShell 体验"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontFamily="Cascadia Code, Consolas"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
 
-                    <TextBox Grid.Column="1" 
-                             x:Name="DirectCommandInput"
-                             Style="{StaticResource ModernTextBoxStyle}"
-                             Background="{StaticResource BackgroundDarkBrush}"
-                             Padding="8,6"
-                             KeyDown="DirectCommandInput_KeyDown"
-                             ToolTip="直接输入 PowerShell 命令，按 Enter 执行"/>
-
-                    <Button Grid.Column="2" 
-                            Content="▶" 
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            Padding="14,6"
-                            Margin="8,0,0,0"
-                            Click="ExecuteDirectCommand_Click"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Content="⏹ 中断" 
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="10,4"
+                                FontSize="12"
+                                Click="InterruptCommand_Click"
+                                ToolTip="发送 Ctrl+C 中断当前命令"/>
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>
