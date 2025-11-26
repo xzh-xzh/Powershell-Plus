@@ -58,12 +58,6 @@ public partial class MainViewModel : ObservableObject
             Application.Current.Dispatcher.Invoke(() =>
             {
                 TerminalOutput += output + Environment.NewLine;
-                
-                // 更新当前目录
-                if (output.StartsWith("PS ") && output.Contains(">"))
-                {
-                    CurrentDirectory = _terminal.CurrentDirectory;
-                }
             });
         };
 
@@ -72,6 +66,14 @@ public partial class MainViewModel : ObservableObject
             Application.Current.Dispatcher.Invoke(() =>
             {
                 TerminalOutput += error + Environment.NewLine;
+            });
+        };
+
+        _terminal.DirectoryChanged += (s, path) =>
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                CurrentDirectory = path;
             });
         };
 

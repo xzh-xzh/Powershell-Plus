@@ -5,19 +5,18 @@ using System.Text;
 namespace PowerShellPlus.Services;
 
 /// <summary>
-/// 真正的 PowerShell 终端服务，使用进程重定向
+/// PowerShell 终端服务 - 交互模式
 /// </summary>
 public class TerminalService : IDisposable
 {
     private Process? _process;
     private StreamWriter? _inputWriter;
     private bool _isDisposed;
-    private readonly StringBuilder _outputBuffer = new();
-    private readonly object _lock = new();
 
     public event EventHandler<string>? OutputReceived;
     public event EventHandler<string>? ErrorReceived;
     public event EventHandler? ProcessExited;
+    public event EventHandler<string>? DirectoryChanged;
 
     public bool IsRunning => _process != null && !_process.HasExited;
     public string CurrentDirectory { get; private set; } = string.Empty;
@@ -34,14 +33,15 @@ public class TerminalService : IDisposable
         var startInfo = new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = "-NoLogo -NoExit -Command -",
+            // 交互模式：不使用 -Command，让 PowerShell 正常运行并输出提示符
+            Arguments = "-NoLogo -NoExit",
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
+            StandardOutputEncoding = Encoding.GetEncoding("gbk"), // Windows 默认编码
+            StandardErrorEncoding = Encoding.GetEncoding("gbk"),
             WorkingDirectory = CurrentDirectory
         };
 
@@ -57,11 +57,6 @@ public class TerminalService : IDisposable
 
         _inputWriter = _process.StandardInput;
         _inputWriter.AutoFlush = true;
-
-        // 设置控制台编码为 UTF-8
-        SendCommand("chcp 65001 | Out-Null");
-        // 设置提示符格式
-        SendCommand("function prompt { \"PS $($executionContext.SessionState.Path.CurrentLocation)> \" }");
     }
 
     public void SendCommand(string command)
@@ -78,14 +73,14 @@ public class TerminalService : IDisposable
         }
     }
 
-    public void SendInput(string input)
+    public void SendCtrlC()
     {
-        if (!IsRunning || _inputWriter == null) return;
+        if (!IsRunning || _process == null) return;
 
         try
         {
-            _inputWriter.Write(input);
-            _inputWriter.Flush();
+            // 尝试中断 - 发送空行
+            _inputWriter?.WriteLine();
         }
         catch
         {
@@ -93,41 +88,28 @@ public class TerminalService : IDisposable
         }
     }
 
-    public void SendCtrlC()
-    {
-        if (!IsRunning || _process == null) return;
-
-        try
-        {
-            // 发送 Ctrl+C 信号来中断当前命令
-            GenerateConsoleCtrlEvent(0, (uint)_process.Id);
-        }
-        catch
-        {
-            // 如果失败，尝试发送换行
-            SendInput("\n");
-        }
-    }
-
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-    private static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
-
     private void OnOutputDataReceived(object sender, DataReceivedEventArgs e)
     {
-        if (e.Data != null)
+        if (e.Data == null) return;
+
+        // 尝试从提示符中提取当前目录
+        // PowerShell 提示符格式: "PS C:\path> " 
+        var line = e.Data;
+        if (line.StartsWith("PS ") && line.TrimEnd().EndsWith(">"))
         {
-            // 尝试提取当前目录
-            if (e.Data.StartsWith("PS ") && e.Data.Contains(">"))
+            var endIndex = line.LastIndexOf('>');
+            if (endIndex > 3)
             {
-                var path = e.Data.Substring(3, e.Data.LastIndexOf('>') - 3).Trim();
-                if (Directory.Exists(path))
+                var path = line.Substring(3, endIndex - 3).Trim();
+                if (Directory.Exists(path) && path != CurrentDirectory)
                 {
                     CurrentDirectory = path;
+                    DirectoryChanged?.Invoke(this, path);
                 }
             }
-
-            OutputReceived?.Invoke(this, e.Data);
         }
+
+        OutputReceived?.Invoke(this, e.Data);
     }
 
     private void OnErrorDataReceived(object sender, DataReceivedEventArgs e)
@@ -181,4 +163,3 @@ public class TerminalService : IDisposable
         _isDisposed = true;
     }
 }
-
