@@ -1,0 +1,104 @@
+<Window x:Class="PowerShellPlus.Views.CommandEditDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="编辑命令" 
+        Height="420" Width="480"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundMediumBrush}">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <TextBlock x:Name="DialogTitle"
+                   Grid.Row="0" 
+                   Text="➕ 添加命令" 
+                   FontSize="20" FontWeight="Bold"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Margin="0,0,0,20"/>
+
+        <!-- 表单内容 -->
+        <StackPanel Grid.Row="1">
+            <!-- 命令名称 -->
+            <TextBlock Text="命令名称 *" 
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,0,0,6"/>
+            <TextBox x:Name="NameBox"
+                     Style="{StaticResource ModernTextBoxStyle}"
+                     Padding="10,8"
+                     MaxLength="20"/>
+
+            <!-- 图标 -->
+            <TextBlock Text="图标（Emoji）" 
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,16,0,6"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="IconBox"
+                         Style="{StaticResource ModernTextBoxStyle}"
+                         Padding="10,8"
+                         MaxLength="4"
+                         TextAlignment="Center"
+                         FontSize="18"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="常用：" Foreground="{StaticResource TextMutedBrush}" FontSize="12" VerticalAlignment="Center"/>
+                    <Button Content="⚡" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                    <Button Content="📁" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                    <Button Content="🔧" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                    <Button Content="📊" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                    <Button Content="🚀" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                    <Button Content="💾" Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" FontSize="14" Click="EmojiButton_Click" Margin="4,0"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- PowerShell 命令 -->
+            <TextBlock Text="PowerShell 命令 *" 
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,16,0,6"/>
+            <TextBox x:Name="CommandBox"
+                     Style="{StaticResource CodePreviewStyle}"
+                     Height="100"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"/>
+
+            <!-- 描述 -->
+            <TextBlock Text="描述（可选）" 
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,16,0,6"/>
+            <TextBox x:Name="DescriptionBox"
+                     Style="{StaticResource ModernTextBoxStyle}"
+                     Padding="10,8"
+                     MaxLength="100"/>
+        </StackPanel>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right"
+                    Margin="0,24,0,0">
+            <Button Content="取消" 
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Click="Cancel_Click"
+                    Width="100"/>
+            <Button Content="确定" 
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    Click="Save_Click"
+                    Margin="12,0,0,0"
+                    Width="100"/>
+        </StackPanel>
+    </Grid>
+</Window>
+
