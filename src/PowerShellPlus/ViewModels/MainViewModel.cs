@@ -10,7 +10,7 @@ namespace PowerShellPlus.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly OpenAIService _aiService;
-    private readonly PowerShellService _psService;
+    private readonly TerminalService _terminal;
     private CancellationTokenSource? _cts;
 
     [ObservableProperty]
@@ -47,62 +47,54 @@ public partial class MainViewModel : ObservableObject
     {
         Settings = AppSettings.Load();
         _aiService = new OpenAIService();
-        _psService = new PowerShellService();
+        _terminal = new TerminalService();
 
-        _currentDirectory = _psService.CurrentDirectory;
+        _currentDirectory = _terminal.CurrentDirectory;
         _isApiConfigured = _aiService.IsConfigured;
 
-        // 订阅 PowerShell 事件
-        _psService.OutputReceived += (s, output) =>
+        // 订阅终端事件
+        _terminal.OutputReceived += (s, output) =>
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
                 TerminalOutput += output + Environment.NewLine;
+                
+                // 更新当前目录
+                if (output.StartsWith("PS ") && output.Contains(">"))
+                {
+                    CurrentDirectory = _terminal.CurrentDirectory;
+                }
             });
         };
 
-        _psService.ErrorReceived += (s, error) =>
+        _terminal.ErrorReceived += (s, error) =>
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
-                TerminalOutput += $"[错误] {error}" + Environment.NewLine;
+                TerminalOutput += error + Environment.NewLine;
             });
         };
 
-        _psService.DirectoryChanged += (s, dir) =>
+        _terminal.ProcessExited += (s, e) =>
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
-                CurrentDirectory = dir;
-            });
-        };
-
-        _psService.CommandCompleted += (s, e) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                IsExecuting = false;
-            });
-        };
-
-        // 订阅清屏事件
-        _psService.ClearRequested += (s, e) =>
-        {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                TerminalOutput = $"PowerShell Plus - AI 增强终端{Environment.NewLine}";
-                TerminalOutput += $"================================{Environment.NewLine}";
-                TerminalOutput += $"{_psService.GetPrompt()} ";
+                TerminalOutput += Environment.NewLine + "[终端已退出，正在重启...]" + Environment.NewLine;
+                _terminal.Start();
             });
         };
 
         // 初始化快捷命令
         InitializeQuickCommands();
 
-        // 初始欢迎消息
-        TerminalOutput = $"PowerShell Plus - AI 增强终端{Environment.NewLine}";
-        TerminalOutput += $"================================{Environment.NewLine}";
-        TerminalOutput += $"{_psService.GetPrompt()} ";
+        // 启动终端
+        StartTerminal();
+    }
+
+    private void StartTerminal()
+    {
+        TerminalOutput = "正在启动 PowerShell..." + Environment.NewLine;
+        _terminal.Start();
     }
 
     private void InitializeQuickCommands()
@@ -124,7 +116,7 @@ public partial class MainViewModel : ObservableObject
             new() { Name = "磁盘空间", Command = "Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{N='Used(GB)';E={[math]::Round($_.Used/1GB,2)}}, @{N='Free(GB)';E={[math]::Round($_.Free/1GB,2)}}", Icon = "💾", IsBuiltIn = true, Description = "显示磁盘使用情况" },
             new() { Name = "网络状态", Command = "Test-Connection -ComputerName baidu.com -Count 2", Icon = "🌐", IsBuiltIn = true, Description = "测试网络连接" },
             new() { Name = "进程列表", Command = "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, WorkingSet64", Icon = "📊", IsBuiltIn = true, Description = "显示CPU占用最高的10个进程" },
-            new() { Name = "清空屏幕", Command = "Clear-Host", Icon = "🧹", IsBuiltIn = true, Description = "清空终端屏幕" },
+            new() { Name = "清空屏幕", Command = "cls", Icon = "🧹", IsBuiltIn = true, Description = "清空终端屏幕" },
         };
 
         foreach (var cmd in defaultCommands)
@@ -187,34 +179,32 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ExecuteCommand()
+    private void ExecuteCommand()
     {
-        if (string.IsNullOrWhiteSpace(GeneratedCommand) || IsExecuting)
+        if (string.IsNullOrWhiteSpace(GeneratedCommand))
             return;
 
-        IsExecuting = true;
-        var result = await _psService.ExecuteCommandAsync(GeneratedCommand);
-        // 如果不是清屏命令（有返回内容），添加提示符
-        if (!string.IsNullOrEmpty(result))
-        {
-            TerminalOutput += $"{_psService.GetPrompt()} ";
-        }
+        _terminal.SendCommand(GeneratedCommand);
     }
 
     [RelayCommand]
-    private async Task ExecuteQuickCommand(CommandTemplate? template)
+    private void ExecuteQuickCommand(CommandTemplate? template)
     {
-        if (template == null || IsExecuting)
+        if (template == null)
             return;
 
-        IsExecuting = true;
         GeneratedCommand = template.Command;
         HasGeneratedCommand = true;
-        var result = await _psService.ExecuteCommandAsync(template.Command);
-        if (!string.IsNullOrEmpty(result))
+        
+        // 如果是清屏命令，清空本地输出
+        if (template.Command.Equals("cls", StringComparison.OrdinalIgnoreCase) ||
+            template.Command.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
+            template.Command.Equals("Clear-Host", StringComparison.OrdinalIgnoreCase))
         {
-            TerminalOutput += $"{_psService.GetPrompt()} ";
+            TerminalOutput = string.Empty;
         }
+        
+        _terminal.SendCommand(template.Command);
     }
 
     [RelayCommand]
@@ -227,23 +217,33 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ExecuteDirectCommand(string? command)
+    private void ExecuteDirectCommand(string? command)
     {
-        if (string.IsNullOrWhiteSpace(command) || IsExecuting)
+        if (string.IsNullOrWhiteSpace(command))
             return;
 
-        IsExecuting = true;
-        var result = await _psService.ExecuteCommandAsync(command);
-        if (!string.IsNullOrEmpty(result))
+        // 如果是清屏命令，清空本地输出
+        if (command.Trim().Equals("cls", StringComparison.OrdinalIgnoreCase) ||
+            command.Trim().Equals("clear", StringComparison.OrdinalIgnoreCase) ||
+            command.Trim().Equals("Clear-Host", StringComparison.OrdinalIgnoreCase))
         {
-            TerminalOutput += $"{_psService.GetPrompt()} ";
+            TerminalOutput = string.Empty;
         }
+
+        _terminal.SendCommand(command);
     }
 
     [RelayCommand]
     private void ClearTerminal()
     {
-        TerminalOutput = $"{_psService.GetPrompt()} ";
+        TerminalOutput = string.Empty;
+        _terminal.SendCommand("cls");
+    }
+
+    [RelayCommand]
+    private void InterruptCommand()
+    {
+        _terminal.SendCtrlC();
     }
 
     public void UpdateSettings(AppSettings newSettings)
@@ -266,7 +266,7 @@ public partial class MainViewModel : ObservableObject
 
     public void UpdateAllCommands(List<CommandTemplate> allCommands)
     {
-        // 保存所有命令到设置（都作为自定义命令保存，因为用户可能修改了内置命令）
+        // 保存所有命令到设置
         Settings.CustomCommands = allCommands;
         Settings.Save();
 
@@ -296,7 +296,6 @@ public partial class MainViewModel : ObservableObject
     public void Cleanup()
     {
         _cts?.Cancel();
-        _psService.Dispose();
+        _terminal.Dispose();
     }
 }
-

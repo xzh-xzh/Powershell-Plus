@@ -9,6 +9,8 @@ namespace PowerShellPlus;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private readonly List<string> _commandHistory = new();
+    private int _historyIndex = -1;
 
     public MainWindow()
     {
@@ -31,16 +33,68 @@ public partial class MainWindow : Window
 
     private void DirectCommandInput_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        var textBox = sender as TextBox;
+        
+        switch (e.Key)
         {
-            e.Handled = true;
-            var textBox = sender as TextBox;
-            var command = textBox?.Text;
-            if (!string.IsNullOrWhiteSpace(command))
-            {
-                _viewModel.ExecuteDirectCommandCommand.Execute(command);
-                textBox!.Clear();
-            }
+            case Key.Enter:
+                e.Handled = true;
+                var command = textBox?.Text;
+                if (!string.IsNullOrWhiteSpace(command))
+                {
+                    // 添加到历史
+                    _commandHistory.Add(command);
+                    _historyIndex = _commandHistory.Count;
+                    
+                    _viewModel.ExecuteDirectCommandCommand.Execute(command);
+                    textBox!.Clear();
+                }
+                break;
+                
+            case Key.Up:
+                // 向上浏览历史
+                e.Handled = true;
+                if (_commandHistory.Count > 0 && _historyIndex > 0)
+                {
+                    _historyIndex--;
+                    textBox!.Text = _commandHistory[_historyIndex];
+                    textBox.CaretIndex = textBox.Text.Length;
+                }
+                break;
+                
+            case Key.Down:
+                // 向下浏览历史
+                e.Handled = true;
+                if (_historyIndex < _commandHistory.Count - 1)
+                {
+                    _historyIndex++;
+                    textBox!.Text = _commandHistory[_historyIndex];
+                    textBox.CaretIndex = textBox.Text.Length;
+                }
+                else if (_historyIndex == _commandHistory.Count - 1)
+                {
+                    _historyIndex = _commandHistory.Count;
+                    textBox!.Clear();
+                }
+                break;
+                
+            case Key.C:
+                // Ctrl+C 中断当前命令
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && string.IsNullOrEmpty(textBox?.SelectedText))
+                {
+                    e.Handled = true;
+                    _viewModel.InterruptCommandCommand.Execute(null);
+                }
+                break;
+                
+            case Key.L:
+                // Ctrl+L 清屏
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    e.Handled = true;
+                    _viewModel.ClearTerminalCommand.Execute(null);
+                }
+                break;
         }
     }
 
@@ -49,6 +103,9 @@ public partial class MainWindow : Window
         var command = DirectCommandInput.Text;
         if (!string.IsNullOrWhiteSpace(command))
         {
+            _commandHistory.Add(command);
+            _historyIndex = _commandHistory.Count;
+            
             _viewModel.ExecuteDirectCommandCommand.Execute(command);
             DirectCommandInput.Clear();
         }
