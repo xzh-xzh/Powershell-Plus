@@ -249,20 +249,23 @@ public class ConPtyService : IDisposable
     {
         var powershellPath = FindPowerShellPath();
         
-        // 对于 Windows PowerShell，需要设置 UTF-8 编码
-        string args;
+        // 使用 cmd 来先设置代码页为 UTF-8，然后启动 PowerShell
+        // chcp 65001 设置控制台代码页为 UTF-8
+        string cmdPath = @"C:\Windows\System32\cmd.exe";
+        string psArgs;
+        
         if (powershellPath.Contains("WindowsPowerShell", StringComparison.OrdinalIgnoreCase))
         {
-            // Windows PowerShell: 使用 -Command 来先设置编码
-            args = "-NoExit -Command \"[Console]::OutputEncoding = [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8\"";
+            // Windows PowerShell: 需要完整的 UTF-8 设置
+            psArgs = $"/c chcp 65001 >nul && \"{powershellPath}\" -NoLogo -NoExit -Command \"$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\"";
         }
         else
         {
-            // PowerShell 7+: 原生支持 UTF-8
-            args = "";
+            // PowerShell 7+
+            psArgs = $"/c chcp 65001 >nul && \"{powershellPath}\" -NoLogo";
         }
         
-        var commandLine = new StringBuilder($"\"{powershellPath}\" {args}".Trim());
+        var commandLine = new StringBuilder($"\"{cmdPath}\" {psArgs}");
 
         Debug.WriteLine($"Starting: {commandLine}");
 
