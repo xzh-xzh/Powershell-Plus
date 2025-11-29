@@ -1,6 +1,7 @@
 ﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using PowerShellPlus.Models;
 using PowerShellPlus.ViewModels;
 using PowerShellPlus.Views;
 
@@ -18,6 +19,29 @@ public partial class MainWindow : Window
 
         // 设置终端命令执行回调
         _viewModel.ExecuteInTerminal = ExecuteCommandInTerminal;
+
+        // 设置获取终端上下文回调
+        _viewModel.GetTerminalContext = GetTerminalContext;
+
+        // 监听对话历史变化，自动滚动到底部
+        _viewModel.ChatHistory.CollectionChanged += (s, e) =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                ChatScrollViewer.ScrollToEnd();
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        };
+    }
+
+    private TerminalContext GetTerminalContext()
+    {
+        return new TerminalContext
+        {
+            CurrentDirectory = TerminalControl.GetCurrentDirectory(),
+            RecentOutput = TerminalControl.GetRecentOutput(20),
+            LastCommand = TerminalControl.LastCommand,
+            IsReady = TerminalControl.IsReady
+        };
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -72,6 +96,7 @@ public partial class MainWindow : Window
     private void ClearTerminal_Click(object sender, RoutedEventArgs e)
     {
         TerminalControl.Clear();
+        TerminalControl.ClearRecentOutputBuffer();
     }
 
     private void InterruptCommand_Click(object sender, RoutedEventArgs e)

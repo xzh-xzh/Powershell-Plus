@@ -41,6 +41,11 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public Action<string>? ExecuteInTerminal { get; set; }
 
+    /// <summary>
+    /// 获取终端上下文的回调
+    /// </summary>
+    public Func<TerminalContext>? GetTerminalContext { get; set; }
+
     public MainViewModel()
     {
         Settings = AppSettings.Load();
@@ -50,6 +55,23 @@ public partial class MainViewModel : ObservableObject
 
         // 初始化快捷命令
         InitializeQuickCommands();
+
+        // 添加欢迎消息
+        AddWelcomeMessage();
+    }
+
+    private void AddWelcomeMessage()
+    {
+        ChatHistory.Add(new ChatMessage
+        {
+            Role = "assistant",
+            Content = "你好！我是你的 PowerShell AI 助手。\n\n" +
+                     "我可以帮助你：\n" +
+                     "• 生成和执行 PowerShell 命令\n" +
+                     "• 回答关于 PowerShell 和系统管理的问题\n" +
+                     "• 分析终端输出和解决错误\n\n" +
+                     "直接告诉我你想做什么，或者问我任何问题！"
+        });
     }
 
     private void InitializeQuickCommands()
@@ -103,7 +125,7 @@ public partial class MainViewModel : ObservableObject
         var aiChat = new ChatMessage
         {
             Role = "assistant",
-            Content = "正在分析...",
+            Content = "正在思考...",
             IsLoading = true
         };
         ChatHistory.Add(aiChat);
@@ -115,16 +137,30 @@ public partial class MainViewModel : ObservableObject
         try
         {
             _cts = new CancellationTokenSource();
-            // 使用用户目录作为当前目录
-            var currentDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var command = await _aiService.GenerateCommandAsync(userMessage, currentDir, _cts.Token);
+            
+            // 获取终端上下文
+            var terminalContext = GetTerminalContext?.Invoke() ?? new TerminalContext
+            {
+                CurrentDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                IsReady = false
+            };
 
-            aiChat.Content = "已生成命令:";
-            aiChat.GeneratedCommand = command;
+            // 使用对话模式发送消息
+            var response = await _aiService.SendChatAsync(
+                userMessage, 
+                ChatHistory.Where(m => m != aiChat), // 排除当前正在生成的占位消息
+                terminalContext,
+                _cts.Token);
+
+            aiChat.Content = response.Content;
             aiChat.IsLoading = false;
 
-            GeneratedCommand = command;
-            HasGeneratedCommand = true;
+            if (response.HasCommand && !string.IsNullOrWhiteSpace(response.Command))
+            {
+                aiChat.GeneratedCommand = response.Command;
+                GeneratedCommand = response.Command;
+                HasGeneratedCommand = true;
+            }
         }
         catch (Exception ex)
         {
@@ -144,6 +180,27 @@ public partial class MainViewModel : ObservableObject
             return;
 
         ExecuteInTerminal?.Invoke(GeneratedCommand);
+
+        // 标记最后一条带命令的消息为已执行
+        var lastCommandMessage = ChatHistory.LastOrDefault(m => m.HasCommand && m.GeneratedCommand == GeneratedCommand);
+        if (lastCommandMessage != null)
+        {
+            lastCommandMessage.IsCommandExecuted = true;
+        }
+    }
+
+    [RelayCommand]
+    private void ExecuteMessageCommand(ChatMessage? message)
+    {
+        if (message == null || !message.HasCommand || string.IsNullOrWhiteSpace(message.GeneratedCommand))
+            return;
+
+        ExecuteInTerminal?.Invoke(message.GeneratedCommand);
+        message.IsCommandExecuted = true;
+        
+        // 同步到预览区
+        GeneratedCommand = message.GeneratedCommand;
+        HasGeneratedCommand = true;
     }
 
     [RelayCommand]
@@ -168,12 +225,38 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void CopyMessageCommand(ChatMessage? message)
+    {
+        if (message != null && message.HasCommand && !string.IsNullOrWhiteSpace(message.GeneratedCommand))
+        {
+            Clipboard.SetText(message.GeneratedCommand);
+        }
+    }
+
+    [RelayCommand]
     private void ExecuteDirectCommand(string? command)
     {
         if (string.IsNullOrWhiteSpace(command))
             return;
 
         ExecuteInTerminal?.Invoke(command);
+    }
+
+    [RelayCommand]
+    private void ClearChat()
+    {
+        ChatHistory.Clear();
+        GeneratedCommand = string.Empty;
+        HasGeneratedCommand = false;
+        
+        // 重新添加欢迎消息
+        AddWelcomeMessage();
+    }
+
+    [RelayCommand]
+    private void NewChat()
+    {
+        ClearChat();
     }
 
     public void UpdateSettings(AppSettings newSettings)

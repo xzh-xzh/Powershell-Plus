@@ -20,6 +20,13 @@ public partial class WebTerminalControl : UserControl, IDisposable
     private readonly StringBuilder _outputBuffer = new();
     private readonly System.Timers.Timer _flushTimer;
     private readonly object _bufferLock = new();
+    
+    // 用于上下文跟踪
+    private readonly StringBuilder _recentOutputBuffer = new();
+    private readonly object _recentOutputLock = new();
+    private const int MaxRecentOutputLines = 50;
+    private string _currentTitle = "PowerShell";
+    private string? _lastCommand;
 
     /// <summary>
     /// 终端就绪事件
@@ -40,6 +47,69 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// 终端是否就绪
     /// </summary>
     public bool IsReady => _isInitialized && _ptyService.IsRunning;
+
+    /// <summary>
+    /// 当前终端标题（通常包含当前目录）
+    /// </summary>
+    public string CurrentTitle => _currentTitle;
+
+    /// <summary>
+    /// 最后执行的命令
+    /// </summary>
+    public string? LastCommand => _lastCommand;
+
+    /// <summary>
+    /// 获取最近的终端输出
+    /// </summary>
+    public string GetRecentOutput(int maxLines = 30)
+    {
+        lock (_recentOutputLock)
+        {
+            var content = _recentOutputBuffer.ToString();
+            if (string.IsNullOrEmpty(content))
+                return string.Empty;
+
+            // 分割成行并取最后N行
+            var lines = content.Split('\n');
+            var startIndex = Math.Max(0, lines.Length - maxLines);
+            var recentLines = lines.Skip(startIndex).ToArray();
+            
+            return string.Join("\n", recentLines).Trim();
+        }
+    }
+
+    /// <summary>
+    /// 从标题中提取当前工作目录
+    /// PowerShell 标题格式通常为: "管理员: Windows PowerShell" 或包含路径信息
+    /// </summary>
+    public string GetCurrentDirectory()
+    {
+        // PowerShell 的标题可能包含路径，尝试提取
+        // 常见格式: "C:\Users\xxx - PowerShell" 或 "PowerShell - C:\Users\xxx"
+        var title = _currentTitle;
+        
+        // 尝试匹配路径模式
+        var pathPattern = @"([A-Za-z]:\\[^\r\n\*\?""<>\|]*?)(?:\s*[-–—]|\s*$)";
+        var match = System.Text.RegularExpressions.Regex.Match(title, pathPattern);
+        if (match.Success)
+        {
+            return match.Groups[1].Value.Trim();
+        }
+        
+        // 如果标题不包含路径，返回用户目录作为默认值
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    /// <summary>
+    /// 清除最近输出缓冲区
+    /// </summary>
+    public void ClearRecentOutputBuffer()
+    {
+        lock (_recentOutputLock)
+        {
+            _recentOutputBuffer.Clear();
+        }
+    }
 
     public WebTerminalControl()
     {
@@ -188,6 +258,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
                     var title = root.GetProperty("title").GetString();
                     if (!string.IsNullOrEmpty(title))
                     {
+                        _currentTitle = title;
                         TitleChanged?.Invoke(this, title);
                     }
                     break;
@@ -240,11 +311,26 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
     private void OnPtyOutputReceived(byte[] data)
     {
+        var text = Encoding.UTF8.GetString(data);
+        
         // 将输出添加到缓冲区（提高性能）
         lock (_bufferLock)
         {
-            var text = Encoding.UTF8.GetString(data);
             _outputBuffer.Append(text);
+        }
+        
+        // 同时保存到最近输出缓冲区（用于AI上下文）
+        lock (_recentOutputLock)
+        {
+            _recentOutputBuffer.Append(text);
+            // 限制缓冲区大小
+            if (_recentOutputBuffer.Length > 10000)
+            {
+                var content = _recentOutputBuffer.ToString();
+                _recentOutputBuffer.Clear();
+                // 保留后半部分
+                _recentOutputBuffer.Append(content.Substring(content.Length - 5000));
+            }
         }
     }
 
@@ -302,6 +388,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void SendCommand(string command)
     {
+        _lastCommand = command;
         _ptyService.SendCommand(command);
     }
 
