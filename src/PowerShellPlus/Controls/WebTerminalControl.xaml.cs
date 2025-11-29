@@ -466,7 +466,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
                         }
                     });
                     function writeToTerminal(data) { terminal.write(data); }
-                    function writeBase64ToTerminal(base64Data) { terminal.write(atob(base64Data)); }
+                    function writeBase64ToTerminal(base64Data) { const b = atob(base64Data), u = new Uint8Array(b.length); for(let i=0; i<b.length; i++) u[i] = b.charCodeAt(i); terminal.write(new TextDecoder('utf-8').decode(u)); }
                     function clearTerminal() { terminal.clear(); }
                     function resetTerminal() { terminal.reset(); }
                     function focusTerminal() { terminal.focus(); }
@@ -499,5 +499,6 @@ public partial class WebTerminalControl : UserControl, IDisposable
         GC.SuppressFinalize(this);
     }
 }
+
 
 

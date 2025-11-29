@@ -174,8 +174,14 @@
 
         // 从 C# 接收数据（Base64 编码）
         function writeBase64ToTerminal(base64Data) {
+            // 使用 TextDecoder 正确解码 UTF-8
             const binaryString = atob(base64Data);
-            terminal.write(binaryString);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const text = new TextDecoder('utf-8').decode(bytes);
+            terminal.write(text);
         }
 
         // 清屏
@@ -239,5 +245,6 @@
     </script>
 </body>
 </html>
+
 
 
